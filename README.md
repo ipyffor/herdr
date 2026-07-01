@@ -19,6 +19,10 @@ run your agents where they already run; your machine, a server, anywhere you can
 
 ---
 
+> **This is a fork of [ogulcancelik/herdr](https://github.com/ogulcancelik/herdr).** See [FORK.md](./FORK.md) for differences from upstream.
+
+---
+
 ## what you get
 
 - **a real terminal per agent.** you see each agent's own screen, not an app's imitation of one, so even full-screen TUIs render right.
