@@ -45,7 +45,7 @@ https://github.com/user-attachments/assets/043ec09f-4bdd-41d5-aee0-8fda6b83e267
 
 ## install
 
-**fork builds** (latest: `v0.7.1-fork.1`)
+**fork builds**
 
 download the binary for your platform from [releases](https://github.com/ipyffor/herdr/releases):
 
