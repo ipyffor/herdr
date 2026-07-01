@@ -57,7 +57,7 @@ tmux gives you persistence and panes, but it was built before agents existed. it
 
 ## install
 
-**fork builds** (latest: `v0.7.1-fork.1`)
+**fork builds**
 
 download the binary for your platform from [releases](https://github.com/ipyffor/herdr/releases):
 
