@@ -39,6 +39,10 @@ https://github.com/user-attachments/assets/043ec09f-4bdd-41d5-aee0-8fda6b83e267
 
 ---
 
+> **This is a fork of [ogulcancelik/herdr](https://github.com/ogulcancelik/herdr).** See [FORK.md](./FORK.md) for differences from upstream.
+
+---
+
 ## install
 
 ```bash
