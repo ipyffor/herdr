@@ -57,19 +57,29 @@ tmux gives you persistence and panes, but it was built before agents existed. it
 
 ## install
 
+**fork builds** (latest: `v0.7.1-fork.1`)
+
+download the binary for your platform from [releases](https://github.com/ipyffor/herdr/releases):
+
 ```bash
-curl -fsSL https://herdr.dev/install.sh | sh
+# Linux x86_64
+curl -fsSL -o herdr "https://github.com/ipyffor/herdr/releases/latest/download/herdr-linux-x86_64"
+chmod +x herdr && sudo mv herdr /usr/local/bin/
+
+# Linux aarch64
+curl -fsSL -o herdr "https://github.com/ipyffor/herdr/releases/latest/download/herdr-linux-aarch64"
+chmod +x herdr && sudo mv herdr /usr/local/bin/
+
+# macOS x86_64
+curl -fsSL -o herdr "https://github.com/ipyffor/herdr/releases/latest/download/herdr-macos-x86_64"
+chmod +x herdr && sudo mv herdr /usr/local/bin/
+
+# macOS aarch64 (Apple Silicon)
+curl -fsSL -o herdr "https://github.com/ipyffor/herdr/releases/latest/download/herdr-macos-aarch64"
+chmod +x herdr && sudo mv herdr /usr/local/bin/
 ```
 
-windows preview beta:
-
-```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://herdr.dev/install.ps1 | iex"
-```
-
-also available with `brew install herdr`, `mise use -g herdr`, `nix run github:ogulcancelik/herdr`, or as a stable Linux/macOS binary from [releases](https://github.com/ogulcancelik/herdr/releases).
-
-`herdr update` upgrades an installer-managed install; Homebrew, mise, and Nix update through their own package managers. channel, preview, restart, and restore details are in the [install docs](https://herdr.dev/docs/install/).
+upstream builds: `brew install herdr`, `mise use -g herdr`, `nix run github:ogulcancelik/herdr`, or upstream [releases](https://github.com/ogulcancelik/herdr/releases).
 
 ## quick start
 
@@ -155,7 +165,7 @@ if you are an ai agent helping with this repository, read [`AGENTS.md`](./AGENTS
 ## development
 
 ```bash
-git clone https://github.com/ogulcancelik/herdr
+git clone https://github.com/ipyffor/herdr
 cd herdr
 cargo build --release
 ./target/release/herdr
