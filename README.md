@@ -45,13 +45,31 @@ https://github.com/user-attachments/assets/043ec09f-4bdd-41d5-aee0-8fda6b83e267
 
 ## install
 
+**fork builds** (latest: `v0.7.1-fork.1`)
+
+download the binary for your platform from [releases](https://github.com/ipyffor/herdr/releases):
+
 ```bash
-curl -fsSL https://herdr.dev/install.sh | sh
+# Linux x86_64
+curl -fsSL -o herdr "https://github.com/ipyffor/herdr/releases/latest/download/herdr-linux-x86_64"
+chmod +x herdr && sudo mv herdr /usr/local/bin/
+
+# Linux aarch64
+curl -fsSL -o herdr "https://github.com/ipyffor/herdr/releases/latest/download/herdr-linux-aarch64"
+chmod +x herdr && sudo mv herdr /usr/local/bin/
+
+# macOS x86_64
+curl -fsSL -o herdr "https://github.com/ipyffor/herdr/releases/latest/download/herdr-macos-x86_64"
+chmod +x herdr && sudo mv herdr /usr/local/bin/
+
+# macOS aarch64 (Apple Silicon)
+curl -fsSL -o herdr "https://github.com/ipyffor/herdr/releases/latest/download/herdr-macos-aarch64"
+chmod +x herdr && sudo mv herdr /usr/local/bin/
 ```
 
-or `brew install herdr` · `mise use -g herdr` · windows: `powershell -ExecutionPolicy Bypass -c "irm https://herdr.dev/install.ps1 | iex"` · [endpoint-protected Windows](https://herdr.dev/docs/windows-beta/) · [binaries](https://github.com/herdrdev/herdr/releases)
+upstream builds: `brew install herdr`, `mise use -g herdr`, `nix run github:ogulcancelik/herdr`, or upstream [releases](https://github.com/ogulcancelik/herdr/releases).
 
-then start it where the work lives:
+## quick start
 
 ```bash
 herdr
@@ -76,7 +94,7 @@ if you are an ai agent helping with this repository, read [`AGENTS.md`](./AGENTS
 ## development
 
 ```bash
-git clone https://github.com/herdrdev/herdr
+git clone https://github.com/ipyffor/herdr
 cd herdr
 cargo build --release
 
