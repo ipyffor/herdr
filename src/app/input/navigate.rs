@@ -277,6 +277,12 @@ impl App {
                     leave_navigate_mode(&mut self.state);
                 }
             }
+            NavigateAction::MoveWorkspaceSelectionUp => {
+                self.state.move_selected_workspace_by_visible_delta(-1);
+            }
+            NavigateAction::MoveWorkspaceSelectionDown => {
+                self.state.move_selected_workspace_by_visible_delta(1);
+            }
             NavigateAction::PreviousAgent => {
                 if let Some((idx, ws_idx, pane_id)) = self.relative_agent_entry(false) {
                     self.focus_pane_internal_via_api(ws_idx, pane_id);
@@ -1216,14 +1222,16 @@ fn navigate_reserved_action_for_key(state: &AppState, key: TerminalKey) -> Optio
         }
     }
 
-    if state.keybinds.navigate.workspace_up.matches_direct_key(key)
-        || state
-            .keybinds
-            .navigate
-            .workspace_down
-            .matches_direct_key(key)
+    if state.keybinds.navigate.workspace_up.matches_direct_key(key) {
+        return Some(NavigateAction::MoveWorkspaceSelectionUp);
+    }
+    if state
+        .keybinds
+        .navigate
+        .workspace_down
+        .matches_direct_key(key)
     {
-        return None;
+        return Some(NavigateAction::MoveWorkspaceSelectionDown);
     }
     if state.keybinds.navigate.pane_left.matches_direct_key(key) {
         return Some(NavigateAction::FocusPaneLeft);
@@ -1289,6 +1297,8 @@ pub(crate) enum NavigateAction {
     WorkspacePicker,
     PreviousWorkspace,
     NextWorkspace,
+    MoveWorkspaceSelectionUp,
+    MoveWorkspaceSelectionDown,
     PreviousAgent,
     NextAgent,
     NewTab,
@@ -1597,6 +1607,12 @@ pub(super) fn execute_navigate_action_in_context(
         NavigateAction::NextWorkspace => {
             state.next_workspace();
             leave_navigate_mode(state);
+        }
+        NavigateAction::MoveWorkspaceSelectionUp => {
+            state.move_selected_workspace_by_visible_delta(-1);
+        }
+        NavigateAction::MoveWorkspaceSelectionDown => {
+            state.move_selected_workspace_by_visible_delta(1);
         }
         NavigateAction::PreviousAgent => {
             state.previous_agent();
