@@ -80,6 +80,44 @@ Before committing, propose the commit message and get alignment.
 
 After the change is integrated, remove the task worktree and delete the task branch locally and remotely.
 
+## Fork change workflow
+
+This is a fork of `ogulcancelik/herdr`. Every code change MUST follow this sequence. Do not skip steps or edit directly on `master` or `fork`.
+
+1. **Sync upstream and remote:**
+   ```bash
+   git fetch upstream master
+   git checkout master && git rebase upstream/master
+   git checkout fork && git rebase master
+   git push origin master fork
+   ```
+
+2. **Create feature branch from master:**
+   ```bash
+   git checkout master
+   git checkout -b dev-<slug>
+   ```
+
+3. **Make changes** on the feature branch. Code only — no README/FORK changes.
+
+4. **Merge into master and rebase fork:**
+   ```bash
+   git checkout master && git merge dev-<slug>
+   git checkout fork && git rebase master
+   ```
+
+5. **Push to origin:**
+   ```bash
+   git push origin master fork
+   ```
+
+6. **Cleanup:**
+   ```bash
+   git branch -d dev-<slug>
+   ```
+
+master stays clean for PRs upstream. fork follows via rebase since its only unique commits (README + FORK.md) sit on top of master.
+
 ## Testing
 
 Use `just` recipes by default instead of invoking cargo or scripts directly.
