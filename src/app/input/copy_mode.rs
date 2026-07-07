@@ -3,10 +3,11 @@ use unicode_width::UnicodeWidthChar;
 
 use crate::{
     app::{
-        state::{CopyModeSelection, CopyModeState},
+        state::{CopyModeSearchState, CopyModeSelection, CopyModeState, SearchMatch},
         App, AppState, Mode,
     },
     input::TerminalKey,
+    layout::PaneId,
     selection::Selection,
     terminal::TerminalRuntimeRegistry,
 };
@@ -85,8 +86,78 @@ impl AppState {
         terminal_runtimes: &TerminalRuntimeRegistry,
         key: TerminalKey,
     ) {
+        // --- Search prompt active: text input mode ---
+        if self
+            .copy_mode_search
+            .as_ref()
+            .is_some_and(|s| s.prompt_active)
+        {
+            match key.code {
+                KeyCode::Esc => {
+                    let query_empty = self
+                        .copy_mode_search
+                        .as_ref()
+                        .is_some_and(|s| s.query.is_empty());
+                    if query_empty {
+                        self.copy_mode_search_cancel();
+                    } else {
+                        if let Some(ref mut search) = self.copy_mode_search {
+                            search.query.clear();
+                            search.matches.clear();
+                            search.current_match_index = 0;
+                        }
+                        self.copy_mode_search_update(terminal_runtimes);
+                    }
+                    return;
+                }
+                KeyCode::Enter => {
+                    if let Some(ref mut search) = self.copy_mode_search {
+                        search.prompt_active = false;
+                    }
+                    self.copy_mode_search_jump_to_current(terminal_runtimes);
+                    return;
+                }
+                KeyCode::Backspace => {
+                    if let Some(ref mut search) = self.copy_mode_search {
+                        search.query.pop();
+                    }
+                    self.copy_mode_search_update(terminal_runtimes);
+                    return;
+                }
+                KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    if let Some(ref mut search) = self.copy_mode_search {
+                        search.query.clear();
+                        search.matches.clear();
+                        search.current_match_index = 0;
+                    }
+                    self.copy_mode_search_update(terminal_runtimes);
+                    return;
+                }
+                KeyCode::Char(c)
+                    if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
+                {
+                    if let Some(ref mut search) = self.copy_mode_search {
+                        search.query.push(c);
+                    }
+                    self.copy_mode_search_update(terminal_runtimes);
+                    return;
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match key.code {
             KeyCode::Esc => {
+                // If search is confirmed, Esc clears search instead of exiting.
+                if self
+                    .copy_mode_search
+                    .as_ref()
+                    .is_some_and(|s| !s.prompt_active)
+                {
+                    self.copy_mode_search_cancel();
+                    return;
+                }
                 self.exit_copy_mode(terminal_runtimes, false);
                 return;
             }
@@ -167,6 +238,21 @@ impl AppState {
             'e' => self.copy_mode_word_motion(terminal_runtimes, WordMotion::NextEnd),
             '{' => self.copy_mode_paragraph(terminal_runtimes, -1),
             '}' => self.copy_mode_paragraph(terminal_runtimes, 1),
+            '/' => self.copy_mode_enter_search(terminal_runtimes),
+            'n' if self
+                .copy_mode_search
+                .as_ref()
+                .is_some_and(|s| !s.prompt_active && !s.matches.is_empty()) =>
+            {
+                self.copy_mode_search_navigate(terminal_runtimes, true);
+            }
+            'N' if self
+                .copy_mode_search
+                .as_ref()
+                .is_some_and(|s| !s.prompt_active && !s.matches.is_empty()) =>
+            {
+                self.copy_mode_search_navigate(terminal_runtimes, false);
+            }
             _ => {}
         }
     }
@@ -602,6 +688,194 @@ impl AppState {
                 ));
             }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Search
+    // ------------------------------------------------------------------
+
+    fn copy_mode_enter_search(&mut self, terminal_runtimes: &TerminalRuntimeRegistry) {
+        self.copy_mode_search = Some(CopyModeSearchState {
+            query: String::new(),
+            matches: Vec::new(),
+            current_match_index: 0,
+            prompt_active: true,
+        });
+        self.copy_mode_search_update(terminal_runtimes);
+    }
+
+    pub(crate) fn copy_mode_search_update(&mut self, terminal_runtimes: &TerminalRuntimeRegistry) {
+        let (pane_id, query) = match self.copy_mode_search.as_ref() {
+            Some(search) if search.prompt_active => {
+                let pane_id = match self.copy_mode {
+                    Some(ref cm) => cm.pane_id,
+                    None => return,
+                };
+                (pane_id, search.query.clone())
+            }
+            _ => return,
+        };
+
+        let new_matches = if query.is_empty() {
+            Vec::new()
+        } else {
+            self.search_scrollback_for_query(terminal_runtimes, pane_id, &query)
+                .unwrap_or_default()
+        };
+
+        if let Some(ref mut search) = self.copy_mode_search {
+            search.matches = new_matches;
+            if !search.matches.is_empty() {
+                if search.current_match_index >= search.matches.len() {
+                    search.current_match_index = search.matches.len().saturating_sub(1);
+                }
+            } else {
+                search.current_match_index = 0;
+            }
+        }
+        self.copy_mode_search_jump_to_current(terminal_runtimes);
+    }
+
+    fn search_scrollback_for_query(
+        &self,
+        terminal_runtimes: &TerminalRuntimeRegistry,
+        pane_id: PaneId,
+        query: &str,
+    ) -> Option<Vec<SearchMatch>> {
+        let ws_idx = self.active?;
+        let info = self.pane_info_by_id(pane_id)?;
+        let cols = info.inner_rect.width;
+        if cols == 0 {
+            return Some(Vec::new());
+        }
+
+        let rt = self.runtime_for_pane_in_workspace(terminal_runtimes, ws_idx, pane_id)?;
+        let metrics = rt.scroll_metrics()?;
+        let total_rows = metrics.max_offset_from_bottom + metrics.viewport_rows;
+
+        let lower_query = query.to_ascii_lowercase();
+        let mut matches = Vec::new();
+
+        for row in 0..total_rows {
+            let row_text = rt.read_row_text(cols, row as u32)?;
+            if row_text.is_empty() {
+                continue;
+            }
+            let lower_text = row_text.to_ascii_lowercase();
+            let mut search_offset = 0usize;
+            while let Some(found) = lower_text[search_offset..].find(&lower_query) {
+                let abs_offset = search_offset + found;
+                if let Ok(col) = u16::try_from(abs_offset) {
+                    matches.push(SearchMatch {
+                        row: row as u32,
+                        col,
+                    });
+                }
+                search_offset = abs_offset + 1;
+            }
+        }
+        Some(matches)
+    }
+
+    fn copy_mode_search_jump_to_current(&mut self, terminal_runtimes: &TerminalRuntimeRegistry) {
+        let (target, pane_id, cursor_col) = {
+            let copy_mode = match self.copy_mode {
+                Some(ref cm) => cm,
+                None => return,
+            };
+            let search = match self.copy_mode_search.as_ref() {
+                Some(s) => s,
+                None => return,
+            };
+            if search.matches.is_empty() {
+                return;
+            }
+            if search.current_match_index >= search.matches.len() {
+                return;
+            }
+            let target = search.matches[search.current_match_index];
+            (target, copy_mode.pane_id, target.col)
+        };
+
+        let Some(info) = self.pane_info_by_id(pane_id).cloned() else {
+            return;
+        };
+        let Some(metrics) = self.pane_scroll_metrics(terminal_runtimes, pane_id) else {
+            return;
+        };
+
+        let viewport_top = metrics
+            .max_offset_from_bottom
+            .saturating_sub(metrics.offset_from_bottom) as u32;
+        let viewport_bottom = viewport_top
+            .saturating_add(metrics.viewport_rows as u32)
+            .saturating_sub(1);
+
+        let max_col = info.inner_rect.width.saturating_sub(1);
+        let (cursor_row, cursor_col, scroll_offset) =
+            if target.row >= viewport_top && target.row <= viewport_bottom {
+                (
+                    (target.row - viewport_top) as u16,
+                    cursor_col.min(max_col),
+                    None,
+                )
+            } else if target.row < viewport_top {
+                let scroll_amount = (viewport_top - target.row) as usize;
+                let new_offset = metrics
+                    .offset_from_bottom
+                    .saturating_add(scroll_amount)
+                    .min(metrics.max_offset_from_bottom);
+                (0, cursor_col.min(max_col), Some(new_offset))
+            } else {
+                let scroll_amount = (target.row - viewport_bottom) as usize;
+                let new_offset = metrics.offset_from_bottom.saturating_sub(scroll_amount);
+                (
+                    (metrics.viewport_rows.saturating_sub(1)) as u16,
+                    cursor_col.min(max_col),
+                    Some(new_offset),
+                )
+            };
+
+        if let Some(ref mut copy_mode) = self.copy_mode {
+            copy_mode.cursor_row = cursor_row;
+            copy_mode.cursor_col = cursor_col;
+        }
+        if let Some(offset) = scroll_offset {
+            self.set_pane_scroll_offset(terminal_runtimes, pane_id, offset);
+        }
+        self.sync_copy_mode_selection(terminal_runtimes);
+    }
+
+    fn copy_mode_search_navigate(
+        &mut self,
+        terminal_runtimes: &TerminalRuntimeRegistry,
+        forward: bool,
+    ) {
+        {
+            let Some(ref mut search) = self.copy_mode_search else {
+                return;
+            };
+            if search.prompt_active {
+                return;
+            }
+            if search.matches.is_empty() {
+                return;
+            }
+            if forward {
+                search.current_match_index =
+                    (search.current_match_index + 1) % search.matches.len();
+            } else {
+                search.current_match_index = search
+                    .current_match_index
+                    .checked_sub(1)
+                    .unwrap_or(search.matches.len().saturating_sub(1));
+            }
+        }
+        self.copy_mode_search_jump_to_current(terminal_runtimes);
+    }
+
+    fn copy_mode_search_cancel(&mut self) {
+        self.copy_mode_search = None;
     }
 }
 
@@ -1382,5 +1656,212 @@ mod tests {
         assert_eq!(copy_mode_clipboard_text(&mut app), "alp");
         assert_eq!(app.state.mode, Mode::Terminal);
         assert!(app.state.copy_mode.is_none());
+    }
+
+    // --- Search tests ---
+
+    #[tokio::test]
+    async fn search_slash_enters_prompt() {
+        let (mut app, _) = app_with_copy_screen(b"hello world\n");
+        app.state.enter_copy_mode(&app.terminal_runtimes);
+
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('/'), KeyModifiers::empty()));
+
+        let search = app.state.copy_mode_search.as_ref().expect("search active");
+        assert!(search.prompt_active);
+        assert!(search.query.is_empty());
+        assert_eq!(app.state.mode, Mode::Copy);
+    }
+
+    #[tokio::test]
+    async fn search_typing_finds_matches() {
+        let (mut app, _) = app_with_copy_screen(b"alpha\nbeta\nalpha\n");
+        app.state.enter_copy_mode(&app.terminal_runtimes);
+
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('/'), KeyModifiers::empty()));
+        for c in ['a', 'l', 'p'] {
+            app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char(c), KeyModifiers::empty()));
+        }
+
+        let search = app.state.copy_mode_search.as_ref().expect("search active");
+        assert_eq!(search.query, "alp");
+        assert_eq!(search.matches.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn search_enter_confirms() {
+        let (mut app, _) = app_with_copy_screen(b"alpha\nbeta\n");
+        app.state.enter_copy_mode(&app.terminal_runtimes);
+
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('/'), KeyModifiers::empty()));
+        for c in ['a', 'l', 'p', 'h', 'a'] {
+            app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char(c), KeyModifiers::empty()));
+        }
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Enter, KeyModifiers::empty()));
+
+        let search = app.state.copy_mode_search.as_ref().expect("search active");
+        assert!(!search.prompt_active);
+        assert_eq!(search.current_match_index, 0);
+    }
+
+    #[tokio::test]
+    async fn search_n_n_navigates_after_confirm() {
+        let (mut app, _) = app_with_copy_screen(b"alpha\nbeta\nalpha\n");
+        app.state.enter_copy_mode(&app.terminal_runtimes);
+
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('/'), KeyModifiers::empty()));
+        for c in ['a', 'l', 'p', 'h', 'a'] {
+            app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char(c), KeyModifiers::empty()));
+        }
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Enter, KeyModifiers::empty()));
+
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('n'), KeyModifiers::empty()));
+        assert_eq!(
+            app.state
+                .copy_mode_search
+                .as_ref()
+                .unwrap()
+                .current_match_index,
+            1
+        );
+
+        // N wraps backward.
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('N'), KeyModifiers::SHIFT));
+        assert_eq!(
+            app.state
+                .copy_mode_search
+                .as_ref()
+                .unwrap()
+                .current_match_index,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn search_esc_clears_query_then_cancels() {
+        let (mut app, _) = app_with_copy_screen(b"hello\n");
+        app.state.enter_copy_mode(&app.terminal_runtimes);
+
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('/'), KeyModifiers::empty()));
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('h'), KeyModifiers::empty()));
+
+        // First Esc: clear query, stay in search prompt.
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Esc, KeyModifiers::empty()));
+        let search = app.state.copy_mode_search.as_ref().expect("search active");
+        assert!(search.query.is_empty());
+        assert!(search.prompt_active);
+
+        // Second Esc: cancel search entirely.
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Esc, KeyModifiers::empty()));
+        assert!(app.state.copy_mode_search.is_none());
+        assert_eq!(app.state.mode, Mode::Copy);
+    }
+
+    #[tokio::test]
+    async fn search_esc_confirmed_state_clears_search() {
+        let (mut app, _) = app_with_copy_screen(b"hello\n");
+        app.state.enter_copy_mode(&app.terminal_runtimes);
+
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('/'), KeyModifiers::empty()));
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('h'), KeyModifiers::empty()));
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Enter, KeyModifiers::empty()));
+
+        // Esc in confirmed state: clear search, stay in copy mode.
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Esc, KeyModifiers::empty()));
+        assert!(app.state.copy_mode_search.is_none());
+        assert_eq!(app.state.mode, Mode::Copy);
+    }
+
+    #[tokio::test]
+    async fn search_no_matches_is_graceful() {
+        let (mut app, _) = app_with_copy_screen(b"hello\n");
+        app.state.enter_copy_mode(&app.terminal_runtimes);
+
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('/'), KeyModifiers::empty()));
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('z'), KeyModifiers::empty()));
+
+        let search = app.state.copy_mode_search.as_ref().expect("search active");
+        assert!(search.matches.is_empty());
+
+        // Enter with no matches should not crash.
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Enter, KeyModifiers::empty()));
+        assert_eq!(app.state.mode, Mode::Copy);
+    }
+
+    #[tokio::test]
+    async fn search_is_case_insensitive() {
+        let (mut app, _) = app_with_copy_screen(b"Hello\nHELLO\nhello\n");
+        app.state.enter_copy_mode(&app.terminal_runtimes);
+
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('/'), KeyModifiers::empty()));
+        for c in ['h', 'e', 'l', 'l', 'o'] {
+            app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char(c), KeyModifiers::empty()));
+        }
+
+        let search = app.state.copy_mode_search.as_ref().expect("search active");
+        assert_eq!(search.matches.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn search_scans_scrollback_not_just_viewport() {
+        let bytes = numbered_lines_bytes(64);
+        let (mut app, pane_id) = app_with_copy_scrollback(&bytes);
+        // Scroll up 30 lines so some content is not visible.
+        app.state
+            .set_pane_scroll_offset(&app.terminal_runtimes, pane_id, 30);
+        app.state.enter_copy_mode(&app.terminal_runtimes);
+
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('/'), KeyModifiers::empty()));
+        for c in ['0', '0', '0'] {
+            app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char(c), KeyModifiers::empty()));
+        }
+
+        let search = app.state.copy_mode_search.as_ref().expect("search active");
+        // Every numbered line contains "000", so matches > viewport rows
+        // proves we're scanning scrollback, not just visible area.
+        let viewport_rows = app
+            .state
+            .pane_scroll_metrics(&app.terminal_runtimes, pane_id)
+            .map(|m| m.viewport_rows)
+            .unwrap_or(5);
+        assert!(
+            search.matches.len() > viewport_rows,
+            "expected >{} matches (scanning scrollback), got {}",
+            viewport_rows,
+            search.matches.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn search_ctrl_u_clears_query() {
+        let (mut app, _) = app_with_copy_screen(b"hello world\n");
+        app.state.enter_copy_mode(&app.terminal_runtimes);
+
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('/'), KeyModifiers::empty()));
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('h'), KeyModifiers::empty()));
+
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+
+        let search = app.state.copy_mode_search.as_ref().expect("search active");
+        assert!(search.query.is_empty());
+        assert!(search.matches.is_empty());
+    }
+
+    #[tokio::test]
+    async fn search_cursor_jumps_to_match_on_confirm() {
+        let (mut app, _) = app_with_copy_screen(b"xxx\nhello\nxxx\n");
+        app.state.enter_copy_mode(&app.terminal_runtimes);
+
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char('/'), KeyModifiers::empty()));
+        for c in ['h', 'e', 'l'] {
+            app.handle_copy_mode_key(TerminalKey::new(KeyCode::Char(c), KeyModifiers::empty()));
+        }
+        app.handle_copy_mode_key(TerminalKey::new(KeyCode::Enter, KeyModifiers::empty()));
+
+        let copy_mode = app.state.copy_mode.expect("copy mode active");
+        let search = app.state.copy_mode_search.as_ref().expect("search active");
+        assert!(!search.prompt_active);
+        // Cursor should be on a visible row (not excessive).
+        assert!(copy_mode.cursor_row < 5);
     }
 }

@@ -70,26 +70,80 @@ pub(super) fn render_copy_mode_overlay(app: &AppState, frame: &mut Frame, area: 
         .bg(app.palette.accent)
         .add_modifier(Modifier::BOLD);
 
-    let select = if app
-        .copy_mode
-        .is_some_and(|copy_mode| copy_mode.selection.is_some())
-    {
-        "selecting"
-    } else {
-        "select"
+    let line = match app.copy_mode_search.as_ref() {
+        Some(search) if search.prompt_active => {
+            // Search prompt: query editor + match count.
+            let count_text = if search.matches.is_empty() {
+                if search.query.is_empty() {
+                    String::new()
+                } else {
+                    "no matches".to_string()
+                }
+            } else {
+                format!(
+                    "{}/{}",
+                    search.current_match_index + 1,
+                    search.matches.len()
+                )
+            };
+            let query_style = Style::default().fg(app.palette.text);
+            let mut spans = vec![
+                Span::styled(" SEARCH /", mode_style),
+                Span::raw(" "),
+                Span::styled(&search.query, query_style),
+                Span::styled(" ", mode_style),
+            ];
+            if !count_text.is_empty() {
+                spans.push(Span::styled(count_text, dim));
+            }
+            Line::from(spans)
+        }
+        Some(search) if !search.matches.is_empty() => {
+            // Search confirmed: show match nav hints.
+            let count_text = format!(
+                "{}/{}",
+                search.current_match_index + 1,
+                search.matches.len()
+            );
+            Line::from(vec![
+                Span::styled(" COPY ", mode_style),
+                Span::raw(" "),
+                Span::styled("h/j/k/l w/b/e { }", key),
+                Span::styled(" move  ", dim),
+                Span::styled("n/N", key),
+                Span::styled(format!(" match {count_text}  "), dim),
+                Span::styled("/", key),
+                Span::styled(" search  ", dim),
+                Span::styled("q/esc", key),
+                Span::styled(" exit", dim),
+            ])
+        }
+        _ => {
+            // Default bar with / search hint.
+            let select = if app
+                .copy_mode
+                .is_some_and(|copy_mode| copy_mode.selection.is_some())
+            {
+                "selecting"
+            } else {
+                "select"
+            };
+            Line::from(vec![
+                Span::styled(" COPY ", mode_style),
+                Span::raw(" "),
+                Span::styled("h/j/k/l w/b/e { }", key),
+                Span::styled(" move  ", dim),
+                Span::styled("v/space", key),
+                Span::styled(format!(" {select}  "), dim),
+                Span::styled("y/enter", key),
+                Span::styled(" copy  ", dim),
+                Span::styled("/", key),
+                Span::styled(" search  ", dim),
+                Span::styled("q/esc", key),
+                Span::styled(" exit", dim),
+            ])
+        }
     };
-    let line = Line::from(vec![
-        Span::styled(" COPY ", mode_style),
-        Span::raw(" "),
-        Span::styled("h/j/k/l w/b/e { }", key),
-        Span::styled(" move  ", dim),
-        Span::styled("v/space", key),
-        Span::styled(format!(" {select}  "), dim),
-        Span::styled("y/enter", key),
-        Span::styled(" copy  ", dim),
-        Span::styled("q/esc", key),
-        Span::styled(" exit", dim),
-    ]);
 
     let overlay_y = area.y + area.height.saturating_sub(1);
     let overlay_area = Rect::new(area.x, overlay_y, area.width, 1);

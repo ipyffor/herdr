@@ -340,6 +340,7 @@ pub(super) fn render_panes(
                 &app.palette,
                 app.host_terminal_theme,
             );
+            render_search_highlights(app, frame, info, rt.scroll_metrics());
             render_copy_mode_cursor(app, frame, info);
         }
     }
@@ -639,6 +640,73 @@ fn render_selection_highlight(
                         cell.set_style(style);
                     }
                 }
+            }
+        }
+    }
+}
+
+fn render_search_highlights(
+    app: &AppState,
+    frame: &mut Frame,
+    info: &PaneInfo,
+    scroll_metrics: Option<crate::pane::ScrollMetrics>,
+) {
+    // Verify the search belongs to this pane.
+    if app
+        .copy_mode
+        .as_ref()
+        .is_none_or(|cm| cm.pane_id != info.id)
+    {
+        return;
+    }
+    let search = match &app.copy_mode_search {
+        Some(s) => s,
+        None => return,
+    };
+    if search.matches.is_empty() {
+        return;
+    }
+    let Some(metrics) = scroll_metrics else {
+        return;
+    };
+
+    let viewport_top = metrics
+        .max_offset_from_bottom
+        .saturating_sub(metrics.offset_from_bottom) as u32;
+
+    let current_style = Style::default()
+        .fg(super::widgets::panel_contrast_fg(&app.palette))
+        .bg(app.palette.yellow)
+        .add_modifier(Modifier::BOLD);
+    let other_style = Style::default()
+        .fg(app.palette.text)
+        .bg(app.palette.surface0);
+
+    let buf = frame.buffer_mut();
+    let query_len = search.query.len() as u16;
+
+    for (idx, match_pos) in search.matches.iter().enumerate() {
+        let viewport_row = match match_pos.row.checked_sub(viewport_top) {
+            Some(r) => r,
+            None => continue,
+        };
+        if viewport_row >= info.inner_rect.height as u32 {
+            continue;
+        }
+        let style = if idx == search.current_match_index {
+            current_style
+        } else {
+            other_style
+        };
+
+        let y = info.inner_rect.y + viewport_row as u16;
+        for col_offset in 0..query_len {
+            let x = info.inner_rect.x + match_pos.col + col_offset;
+            if x < info.inner_rect.x + info.inner_rect.width
+                && y < info.inner_rect.y + info.inner_rect.height
+            {
+                let cell = &mut buf[(x, y)];
+                cell.set_style(style);
             }
         }
     }

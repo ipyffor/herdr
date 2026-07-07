@@ -2452,6 +2452,10 @@ impl PaneRuntime {
         self.terminal.extract_selection(selection)
     }
 
+    pub fn read_row_text(&self, cols: u16, absolute_row: u32) -> Option<String> {
+        self.terminal.read_row_text(cols, absolute_row)
+    }
+
     pub fn render(&self, frame: &mut Frame, area: Rect, show_cursor: bool) {
         self.terminal.render(frame, area, show_cursor);
     }

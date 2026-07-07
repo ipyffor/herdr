@@ -155,6 +155,21 @@ impl App {
                 insert_navigator_search_text(&mut self.state, &self.terminal_runtimes, text);
                 true
             }
+            Mode::Copy => {
+                if !self
+                    .state
+                    .copy_mode_search
+                    .as_ref()
+                    .is_some_and(|s| s.prompt_active)
+                {
+                    return false;
+                }
+                if let Some(ref mut search) = self.state.copy_mode_search {
+                    search.query.push_str(text);
+                }
+                self.state.copy_mode_search_update(&self.terminal_runtimes);
+                true
+            }
             _ => false,
         }
     }
@@ -513,6 +528,10 @@ pub(crate) fn modal_paste_target_active(state: &AppState) -> bool {
             .as_ref()
             .is_some_and(|open| open.search_focused),
         Mode::Navigator => state.navigator.search_focused,
+        Mode::Copy => state
+            .copy_mode_search
+            .as_ref()
+            .is_some_and(|s| s.prompt_active),
         _ => false,
     }
 }

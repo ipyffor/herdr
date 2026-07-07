@@ -220,6 +220,10 @@ impl PaneTerminal {
         self.ghostty.visible_ansi()
     }
 
+    pub fn read_row_text(&self, cols: u16, absolute_row: u32) -> Option<String> {
+        self.ghostty.read_row_text(cols, absolute_row)
+    }
+
     pub fn detection_text(&self) -> String {
         self.ghostty.detection_text()
     }
@@ -1176,6 +1180,13 @@ impl GhosttyPaneTerminal {
             .lock()
             .ok()
             .and_then(|mut core| ghostty_extract_selection(&mut core, selection).ok())
+    }
+
+    pub fn read_row_text(&self, cols: u16, absolute_row: u32) -> Option<String> {
+        self.core
+            .lock()
+            .ok()
+            .and_then(|core| ghostty_screen_row(&core.terminal, cols, absolute_row).ok())
     }
 
     pub fn visible_hyperlinks(&self, area: Rect) -> Vec<((u16, u16), String, String)> {

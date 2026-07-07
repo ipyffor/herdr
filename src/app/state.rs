@@ -845,6 +845,24 @@ pub(crate) struct NavigatorState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SearchMatch {
+    /// Absolute row in the screen buffer (0 = top of scrollback).
+    pub row: u32,
+    /// Column where the match starts.
+    pub col: u16,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CopyModeSearchState {
+    pub query: String,
+    pub matches: Vec<SearchMatch>,
+    pub current_match_index: usize,
+    /// When true the bottom bar shows the query editor.
+    /// When false the search has been confirmed and n/N navigate.
+    pub prompt_active: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CopyModeState {
     pub pane_id: PaneId,
     pub cursor_row: u16,
@@ -1340,6 +1358,7 @@ pub struct AppState {
     pub keybind_help: KeybindHelpState,
     pub navigator: NavigatorState,
     pub copy_mode: Option<CopyModeState>,
+    pub copy_mode_search: Option<CopyModeSearchState>,
     pub workspace_scroll: usize,
     pub agent_panel_scroll: usize,
     pub tab_scroll: usize,
@@ -1691,6 +1710,7 @@ impl AppState {
             keybind_help: KeybindHelpState { scroll: 0 },
             navigator: NavigatorState::default(),
             copy_mode: None,
+            copy_mode_search: None,
             workspace_scroll: 0,
             agent_panel_scroll: 0,
             tab_scroll: 0,
