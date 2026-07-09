@@ -703,6 +703,13 @@ pub(super) fn render_sidebar_collapsed(app: &AppState, frame: &mut Frame, area: 
                 buf[(x, y)].set_style(row_style);
             }
         }
+        if is_active && !is_selected {
+            let bar_width = 2u16;
+            let buf = frame.buffer_mut();
+            for x in ws_area.x..ws_area.x + bar_width {
+                buf[(x, y)].set_style(Style::default().bg(p.accent));
+            }
+        }
 
         frame.render_widget(
             Paragraph::new(Line::from(vec![
@@ -877,6 +884,17 @@ fn render_workspace_list(
                 }
                 for x in card.rect.x..card.rect.x + card.rect.width {
                     buf[(x, y)].set_style(Style::default().bg(bg));
+                }
+            }
+            if is_active && !selected && !is_dragged {
+                let bar_width = 2u16;
+                for y in row_y..row_y + row_height {
+                    if y >= list_bottom {
+                        break;
+                    }
+                    for x in card.rect.x..card.rect.x + bar_width {
+                        buf[(x, y)].set_style(Style::default().bg(p.accent));
+                    }
                 }
             }
         }
@@ -1119,6 +1137,13 @@ fn render_agent_detail(
             Paragraph::new(name_line).style(row_style),
             Rect::new(body.x, row_y, body.width, 1),
         );
+        if is_active {
+            let bar_width = 2u16;
+            let buf = frame.buffer_mut();
+            for x in body.x..body.x + bar_width {
+                buf[(x, row_y)].set_style(Style::default().bg(p.accent));
+            }
+        }
         row_y += 1;
 
         let mut status_spans = vec![
@@ -1137,6 +1162,13 @@ fn render_agent_detail(
             Paragraph::new(Line::from(status_spans)).style(row_style),
             Rect::new(body.x, row_y, body.width, 1),
         );
+        if is_active {
+            let bar_width = 2u16;
+            let buf = frame.buffer_mut();
+            for x in body.x..body.x + bar_width {
+                buf[(x, row_y)].set_style(Style::default().bg(p.accent));
+            }
+        }
         row_y += 1;
 
         if row_y < body_bottom {
