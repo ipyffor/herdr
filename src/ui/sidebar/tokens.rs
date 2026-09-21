@@ -55,6 +55,7 @@ impl ResolvedToken {
 pub(crate) struct AgentTokenContext<'a> {
     pub(crate) machine: Option<&'a str>,
     pub(crate) workspace: &'a str,
+    pub(crate) cwd_label: Option<&'a str>,
     pub(crate) tab: Option<&'a str>,
     pub(crate) pane: Option<&'a str>,
     pub(crate) agent_label: Option<&'a str>,
@@ -86,7 +87,13 @@ pub(crate) fn agent_rows(
                             .machine
                             .map(|value| ResolvedTokenKind::Machine(value.to_string())),
                         AgentSidebarToken::Workspace => {
-                            Some(ResolvedTokenKind::Workspace(context.workspace.to_string()))
+                            let mut label = context.workspace.to_string();
+                            if let Some(cwd) = context.cwd_label {
+                                label.push_str(" (");
+                                label.push_str(cwd);
+                                label.push(')');
+                            }
+                            Some(ResolvedTokenKind::Workspace(label))
                         }
                         AgentSidebarToken::Tab => context
                             .tab
@@ -194,6 +201,7 @@ mod tests {
 
     struct Entry {
         workspace: String,
+        cwd_label: Option<String>,
         tab: Option<String>,
         pane: Option<String>,
         agent_label: Option<String>,
@@ -206,6 +214,7 @@ mod tests {
     fn entry() -> Entry {
         Entry {
             workspace: "repo".into(),
+            cwd_label: None,
             tab: None,
             pane: None,
             agent_label: Some("pi".into()),
@@ -220,6 +229,7 @@ mod tests {
         AgentTokenContext {
             machine: None,
             workspace: &entry.workspace,
+            cwd_label: entry.cwd_label.as_deref(),
             tab: entry.tab.as_deref(),
             pane: entry.pane.as_deref(),
             agent_label: entry.agent_label.as_deref(),
@@ -455,6 +465,31 @@ rows = [[{ token = "$load", rules = [{ lt = 50, hide = true }] }], ["workspace"]
                 ResolvedToken::unstyled(ResolvedTokenKind::Machine("Build".into())),
                 ResolvedToken::unstyled(ResolvedTokenKind::Workspace("repo".into())),
             ]]
+        );
+    }
+
+    #[test]
+    fn cwd_label_appends_to_workspace_token() {
+        let mut entry = entry();
+        entry.cwd_label = Some("subdir".into());
+        let config = AgentsSidebarConfig {
+            rows: vec![vec![AgentSidebarToken::Workspace]],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            agent_rows(&config, context(&entry), "working"),
+            vec![vec![ResolvedToken::unstyled(ResolvedTokenKind::Workspace(
+                "repo (subdir)".into()
+            ))]]
+        );
+
+        entry.cwd_label = None;
+        assert_eq!(
+            agent_rows(&config, context(&entry), "working"),
+            vec![vec![ResolvedToken::unstyled(ResolvedTokenKind::Workspace(
+                "repo".into()
+            ))]]
         );
     }
 

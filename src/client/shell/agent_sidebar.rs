@@ -292,11 +292,16 @@ pub(super) fn agent_row(
         .agent
         .as_deref()
         .and_then(crate::detect::parse_agent_label);
+    let cwd_label = pane
+        .and_then(|pane| pane.cwd.as_deref())
+        .and_then(|cwd| std::path::Path::new(cwd).file_name())
+        .and_then(|name| name.to_str());
     let rows = crate::ui::sidebar_agent_rows(
         &config.agents,
         crate::ui::AgentTokenContext {
             machine,
             workspace: &workspace.label,
+            cwd_label,
             tab: tab_label,
             pane: agent
                 .title
