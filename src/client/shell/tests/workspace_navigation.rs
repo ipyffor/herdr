@@ -677,6 +677,16 @@ fn focused_sidebar_rows_carry_an_accent_focus_bar() {
             "expected an accent focus bar inside {rect:?}"
         );
     }
+
+    // The focused pane's cwd basename rides along on the workspace label.
+    let agent_text: String = (agent_rect.y..agent_rect.bottom())
+        .flat_map(|y| (agent_rect.x..agent_rect.right()).map(move |x| (x, y)))
+        .map(|(x, y)| buffer[(x, y)].symbol().to_owned())
+        .collect();
+    assert!(
+        agent_text.contains("client-shell (repo)"),
+        "expected the agent row to show the pane cwd, got {agent_text:?}"
+    );
 }
 
 fn set_local_focus(state: &mut ClientShellState, workspace_id: &str, revision: u64) {
