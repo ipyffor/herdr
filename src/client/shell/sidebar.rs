@@ -101,6 +101,9 @@ pub(crate) fn render_collapsed_sidebar(
             status_icon(status, config.status_indicators),
             Style::default().fg(status_color(status, palette)),
         );
+        if workspace.focused && !selected {
+            put_focus_bar(buffer, rect.x, rect.y, palette);
+        }
         hits.workspaces.push(WorkspaceHit {
             rect,
             endpoint_id: ClientEndpointId::Local,
@@ -168,6 +171,9 @@ pub(crate) fn render_collapsed_sidebar(
             status_icon(agent.agent_status, config.status_indicators),
             Style::default().fg(status_color(agent.agent_status, palette)),
         );
+        if agent.focused {
+            put_focus_bar(buffer, rect.x, rect.y, palette);
+        }
         hits.agents.push((rect, pane_id));
     }
     hits.sidebar_toggle = if area.is_empty() || workspace_area.width == 0 {
@@ -746,6 +752,11 @@ pub(in crate::client::shell) fn render_workspace_rows(
             for x in area.x..area.right() {
                 buffer[(x, y)].set_bg(background);
             }
+        }
+    }
+    if focused && !selected && !dragged {
+        for y in area.y..area.bottom() {
+            put_focus_bar(buffer, area.x, y, palette);
         }
     }
 }

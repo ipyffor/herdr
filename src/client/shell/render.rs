@@ -371,6 +371,18 @@ pub(super) fn put_text(buffer: &mut Buffer, x: u16, y: u16, width: u16, text: &s
     buffer.set_stringn(x, y, text, width as usize, style);
 }
 
+/// Mark a focused row's left edge with an accent half-block.
+///
+/// Only the symbol and foreground are replaced, so an existing row fill
+/// (selection or active background) shows through behind the bar.
+pub(super) fn put_focus_bar(buffer: &mut Buffer, x: u16, y: u16, palette: &Palette) {
+    if y >= buffer.area.bottom() || x >= buffer.area.right() {
+        return;
+    }
+    buffer[(x, y)].set_symbol("▌");
+    buffer[(x, y)].set_fg(palette.accent);
+}
+
 pub(super) fn display_width(text: &str) -> u16 {
     UnicodeWidthStr::width(text).min(u16::MAX as usize) as u16
 }

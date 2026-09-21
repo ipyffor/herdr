@@ -8,6 +8,7 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 
+use super::render::put_focus_bar;
 use super::*;
 
 pub(super) struct AgentRow {
@@ -375,6 +376,11 @@ pub(super) fn render_agent_row(
             Rect::new(rect.x, rect.y + index as u16, rect.width, 1),
             buffer,
         );
+    }
+    if row.focused {
+        for index in 0..rows.len().min(rect.height as usize) {
+            put_focus_bar(buffer, rect.x, rect.y + index as u16, palette);
+        }
     }
 }
 

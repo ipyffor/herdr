@@ -624,6 +624,61 @@ fn assert_local_highlight(state: &mut ClientShellState, selected_id: &str) {
     }
 }
 
+#[test]
+fn focused_sidebar_rows_carry_an_accent_focus_bar() {
+    let mut projected = snapshot();
+    projected.agents = vec![ClientShellAgent {
+        pane_id: "pane_1".into(),
+        workspace_id: "ws_1".into(),
+        tab_id: "tab_1".into(),
+        name: Some("reviewer".into()),
+        display_agent: None,
+        agent: None,
+        title: None,
+        terminal_title: None,
+        terminal_title_stripped: None,
+        agent_status: AgentStatus::Idle,
+        state_change_seq: 1,
+        state_labels: Vec::new(),
+        tokens: Vec::new(),
+        focused: true,
+    }];
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.config.theme_runtime.auto_switch = false;
+    state.set_snapshot(Box::new(projected));
+    state.set_pane_surface(surface());
+    let buffer = state
+        .compose(106, 30)
+        .expect("sidebar")
+        .to_ratatui_buffer()
+        .expect("buffer");
+
+    let accent = state.config.palette.accent;
+    let workspace_rect = state
+        .hits
+        .workspaces
+        .iter()
+        .find(|hit| hit.workspace_id == "ws_1")
+        .map(|hit| hit.rect)
+        .expect("workspace row");
+    let (agent_rect, _) = state
+        .hits
+        .agents
+        .iter()
+        .find(|(_, pane_id)| pane_id == "pane_1")
+        .expect("agent row");
+
+    for rect in [workspace_rect, *agent_rect] {
+        assert!(
+            (rect.x..rect.right()).any(|x| {
+                (rect.y..rect.bottom())
+                    .any(|y| buffer[(x, y)].symbol() == "▌" && buffer[(x, y)].fg == accent)
+            }),
+            "expected an accent focus bar inside {rect:?}"
+        );
+    }
+}
+
 fn set_local_focus(state: &mut ClientShellState, workspace_id: &str, revision: u64) {
     let mut snapshot = workspaces(3);
     snapshot.revision = revision;

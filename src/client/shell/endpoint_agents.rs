@@ -1,4 +1,4 @@
-use super::render::put_text;
+use super::render::{put_focus_bar, put_text};
 use super::*;
 
 pub(super) fn render_collapsed(
@@ -14,6 +14,7 @@ pub(super) fn render_collapsed(
         let rect = Rect::new(area.x, area.y + index as u16, area.width, 1);
         if row.agent.focused {
             buffer.set_style(rect, Style::default().bg(config.palette.active_row_bg));
+            put_focus_bar(buffer, rect.x, rect.y, &config.palette);
         }
         let initial = row.machine_label.chars().next().unwrap_or('?');
         put_text(

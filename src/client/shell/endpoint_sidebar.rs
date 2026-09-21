@@ -1,4 +1,4 @@
-use super::render::{display_width, put_right_text, put_text, ShellRenderState};
+use super::render::{display_width, put_focus_bar, put_right_text, put_text, ShellRenderState};
 use super::*;
 
 fn collapsed_groups_for_endpoint<'a>(
@@ -71,6 +71,7 @@ pub(super) fn render_collapsed(
         } else {
             if active && collapsed {
                 buffer.set_style(rect, Style::default().bg(palette.active_row_bg));
+                put_focus_bar(buffer, rect.x, rect.y, palette);
             }
             let label = if endpoint.endpoint_id.is_local() {
                 "L".to_owned()
@@ -135,6 +136,7 @@ pub(super) fn render_collapsed(
                         state.selected_workspace_id.is_some(),
                     )),
                 );
+                put_focus_bar(buffer, rect.x, rect.y, palette);
             }
             let stale = endpoint.status != ClientEndpointStatus::Online;
             let number = format!(" {}", workspace.number);
