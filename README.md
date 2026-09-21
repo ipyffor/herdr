@@ -67,7 +67,7 @@ curl -fsSL -o herdr "https://github.com/ipyffor/herdr/releases/latest/download/h
 chmod +x herdr && sudo mv herdr /usr/local/bin/
 ```
 
-upstream builds: `brew install herdr`, `mise use -g herdr`, `nix run github:ogulcancelik/herdr`, or upstream [releases](https://github.com/ogulcancelik/herdr/releases).
+upstream builds: `brew install herdr`, `mise use -g herdr`, `nix run github:ogulcancelik/herdr`, windows: `powershell -ExecutionPolicy Bypass -c "irm https://herdr.dev/install.ps1 | iex"`, or upstream [releases](https://github.com/ogulcancelik/herdr/releases).
 
 ## quick start
 
