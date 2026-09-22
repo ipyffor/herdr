@@ -6,9 +6,10 @@ This is a personal fork of [ogulcancelik/herdr](https://github.com/ogulcancelik/
 
 - **Show agent working directory in sidebar** — sidebar agent rows append the agent pane's working directory basename in parentheses to the workspace name, so agents running in different subdirectories of the same workspace can be told apart.
 - **Accent bar on focused sidebar items** — the focused workspace and agent rows carry an accent half-block on their left edge. The active-row background fill on its own is barely distinguishable from the panel background.
+- **Search copy mode as the query is typed** — matches and the match count update while a copy-mode search query is still being edited, instead of only after Enter. The preview is debounced on the client tick and reuses the existing `pane.copy_search` endpoint; it does not move the cursor or commit the query for `n`/`N`.
 
-Both are client-side rendering changes. Neither touches shared runtime state or
-the protocol.
+All three are client-side changes. None touches shared runtime state or the
+protocol.
 
 ## dropped: server-side remote mirror
 
