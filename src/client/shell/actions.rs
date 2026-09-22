@@ -754,6 +754,7 @@ impl ClientShellState {
                 query,
                 direction,
                 repeat,
+                preview,
                 generation,
                 session_generation,
             } => {
@@ -773,6 +774,7 @@ impl ClientShellState {
                             query,
                             direction,
                             repeat,
+                            preview,
                             generation,
                             ClientCopySearchResult {
                                 content_revision,

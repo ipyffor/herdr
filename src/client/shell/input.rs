@@ -304,7 +304,7 @@ impl ClientShellState {
         outcome: &mut ClientShellInput,
     ) {
         outcome.repaint |= self.clear_link_hover();
-        if self.copy_operation_in_flight {
+        if self.copy_operation_in_flight && !self.copy_search_prompt_open() {
             self.copy_input_queue.push_back(key);
             return;
         }

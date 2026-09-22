@@ -275,11 +275,10 @@ impl ClientShellState {
             return false;
         };
         let mut submit = None;
+        let mut edited = false;
         match key.code {
             KeyCode::Esc => {
-                if let Some(copy_mode) = self.copy_mode.as_mut() {
-                    copy_mode.search_prompt = None;
-                }
+                self.cancel_copy_search_prompt();
             }
             KeyCode::Enter => {
                 submit = Some((prompt.query.to_string(), prompt.direction));
@@ -293,12 +292,15 @@ impl ClientShellState {
                     .as_mut()
                     .and_then(|copy_mode| copy_mode.search_prompt.as_mut())
                 {
-                    prompt.query.handle_key(key);
+                    edited = prompt.query.handle_key(key).unwrap_or(false);
                 }
             }
         }
         if let Some((query, direction)) = submit {
-            self.request_copy_search(query, direction, false, outcome);
+            self.clear_copy_search_preview();
+            self.request_copy_search(query, direction, false, false, outcome);
+        } else if edited {
+            self.note_copy_search_preview();
         }
         outcome.repaint = true;
         true
@@ -319,7 +321,9 @@ impl ClientShellState {
         else {
             return false;
         };
-        prompt.query.insert(text);
+        if prompt.query.insert(text) {
+            self.note_copy_search_preview();
+        }
         true
     }
 
@@ -327,10 +331,112 @@ impl ClientShellState {
         let Some(copy_mode) = self.copy_mode.as_mut() else {
             return;
         };
+        let restore = ClientCopySearchHighlights {
+            matches: copy_mode.search_matches.clone(),
+            total: copy_mode.search_total,
+            current: copy_mode.search_current,
+            current_global: copy_mode.search_current_global,
+        };
         copy_mode.search_prompt = Some(ClientCopySearchPrompt {
             direction,
             query: TextEditor::default(),
+            restore,
         });
+        self.clear_copy_search_preview();
+    }
+
+    /// Put back the highlights that were painted before the prompt opened.
+    fn restore_copy_search_highlights(&mut self) {
+        let Some(copy_mode) = self.copy_mode.as_mut() else {
+            return;
+        };
+        let Some(restore) = copy_mode
+            .search_prompt
+            .as_ref()
+            .map(|prompt| prompt.restore.clone())
+        else {
+            return;
+        };
+        copy_mode.search_matches = restore.matches;
+        copy_mode.search_total = restore.total;
+        copy_mode.search_current = restore.current;
+        copy_mode.search_current_global = restore.current_global;
+    }
+
+    fn cancel_copy_search_prompt(&mut self) {
+        self.restore_copy_search_highlights();
+        self.clear_copy_search_preview();
+        if let Some(copy_mode) = self.copy_mode.as_mut() {
+            copy_mode.search_prompt = None;
+        }
+    }
+
+    /// Whether the copy-mode search prompt is capturing keys.
+    ///
+    /// Prompt keys only edit local text, so they must not be deferred behind an
+    /// in-flight copy operation the way motions and committed searches are.
+    pub(super) fn copy_search_prompt_open(&self) -> bool {
+        self.copy_mode
+            .as_ref()
+            .is_some_and(|copy_mode| copy_mode.search_prompt.is_some())
+    }
+
+    /// Note that the prompt query changed, so the highlights can follow it.
+    ///
+    /// The search itself is deferred to [`Self::tick_copy_search_preview`] so a
+    /// fast typist neither queues a search per keystroke nor leaves one in
+    /// flight when Enter commits.
+    fn note_copy_search_preview(&mut self) {
+        let Some(query) = self
+            .copy_mode
+            .as_ref()
+            .and_then(|copy_mode| copy_mode.search_prompt.as_ref())
+            .map(|prompt| prompt.query.as_str().to_string())
+        else {
+            return;
+        };
+        if query.is_empty() {
+            // An empty query highlights nothing. Show the pre-prompt state
+            // rather than asking the endpoint for a search it cannot run.
+            self.restore_copy_search_highlights();
+            self.clear_copy_search_preview();
+            return;
+        }
+        self.copy_search_preview_typed = true;
+        self.copy_search_preview_ready = false;
+    }
+
+    fn clear_copy_search_preview(&mut self) {
+        self.copy_search_preview_typed = false;
+        self.copy_search_preview_ready = false;
+    }
+
+    /// Run the pending preview search once typing has settled.
+    pub(crate) fn tick_copy_search_preview(&mut self, outcome: &mut ClientShellInput) {
+        if !self.copy_search_prompt_open() {
+            self.clear_copy_search_preview();
+            return;
+        }
+        if self.copy_search_preview_typed {
+            // Keystrokes are still arriving; wait for a quiet tick first.
+            self.copy_search_preview_typed = false;
+            self.copy_search_preview_ready = true;
+            return;
+        }
+        if !self.copy_search_preview_ready {
+            return;
+        }
+        self.copy_search_preview_ready = false;
+        let Some((query, direction)) = self.copy_mode.as_ref().and_then(|copy_mode| {
+            let prompt = copy_mode.search_prompt.as_ref()?;
+            Some((prompt.query.as_str().to_string(), prompt.direction))
+        }) else {
+            return;
+        };
+        if query.is_empty() {
+            return;
+        }
+        self.request_copy_search(query, direction, false, true, outcome);
     }
 
     fn repeat_copy_search(&mut self, reverse: bool, outcome: &mut ClientShellInput) {
@@ -355,7 +461,13 @@ impl ClientShellState {
         } else {
             direction
         };
-        self.request_copy_search(copy_mode.search_query.clone(), direction, true, outcome);
+        self.request_copy_search(
+            copy_mode.search_query.clone(),
+            direction,
+            true,
+            false,
+            outcome,
+        );
     }
 
     fn defer_copy_until_search_result(&mut self) -> bool {
@@ -390,16 +502,25 @@ impl ClientShellState {
         query: String,
         direction: crate::api::schema::PaneCopySearchDirection,
         repeat: bool,
+        preview: bool,
         outcome: &mut ClientShellInput,
     ) {
         if query.is_empty() || self.copy_mode.is_none() {
             return;
+        }
+        if preview {
+            // Only the newest preview matters: typing must not queue one
+            // search per keystroke behind an in-flight one.
+            self.copy_operation_queue.retain(|operation| {
+                !matches!(operation, ClientCopyOperation::Search { preview: true, .. })
+            });
         }
         self.copy_operation_queue
             .push_back(ClientCopyOperation::Search {
                 query,
                 direction,
                 repeat,
+                preview,
             });
         self.dispatch_next_copy_operation(outcome);
     }
@@ -411,6 +532,7 @@ impl ClientShellState {
         query: String,
         direction: crate::api::schema::PaneCopySearchDirection,
         repeat: bool,
+        preview: bool,
         generation: u64,
         result: ClientCopySearchResult,
         outcome: &mut ClientShellInput,
@@ -430,14 +552,23 @@ impl ClientShellState {
             return false;
         }
         let current = result.current.filter(|index| *index < result.matches.len());
-        copy_mode.search_query = query;
-        if !repeat {
-            copy_mode.search_direction = Some(direction);
+        if !preview {
+            copy_mode.search_query = query;
+            if !repeat {
+                copy_mode.search_direction = Some(direction);
+            }
         }
         copy_mode.search_matches = result.matches;
         copy_mode.search_total = result.total;
         copy_mode.search_current = current;
         copy_mode.search_current_global = result.current_global;
+        if preview {
+            // A preview only repaints highlights. Leaving the cursor and the
+            // committed query alone keeps the origin valid for the next
+            // keystroke and lets Esc put the previous highlights back.
+            outcome.repaint = true;
+            return true;
+        }
         let target = current.and_then(|index| copy_mode.search_matches.get(index).copied());
         let copy_after_search = if search_queued {
             false
@@ -747,6 +878,7 @@ impl ClientShellState {
                     query,
                     direction,
                     repeat,
+                    preview,
                 } => {
                     if query.is_empty() {
                         continue;
@@ -778,6 +910,7 @@ impl ClientShellState {
                             query,
                             direction,
                             repeat,
+                            preview,
                             generation,
                             session_generation,
                         },

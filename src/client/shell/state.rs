@@ -668,6 +668,7 @@ pub(super) enum PendingEndpointKind {
         query: String,
         direction: crate::api::schema::PaneCopySearchDirection,
         repeat: bool,
+        preview: bool,
         generation: u64,
         session_generation: u64,
     },
@@ -801,6 +802,17 @@ pub(super) enum ClientCopySelection {
 pub(super) struct ClientCopySearchPrompt {
     pub(super) direction: crate::api::schema::PaneCopySearchDirection,
     pub(super) query: TextEditor,
+    /// Highlights to put back if the prompt is cancelled.
+    pub(super) restore: ClientCopySearchHighlights,
+}
+
+/// The match set currently painted over the pane.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct ClientCopySearchHighlights {
+    pub(super) matches: Vec<crate::api::schema::PaneTextRange>,
+    pub(super) total: u64,
+    pub(super) current: Option<usize>,
+    pub(super) current_global: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -810,6 +822,9 @@ pub(super) enum ClientCopyOperation {
         query: String,
         direction: crate::api::schema::PaneCopySearchDirection,
         repeat: bool,
+        /// Preview searches only repaint highlights; they leave the cursor,
+        /// the committed query, and any pending copy alone.
+        preview: bool,
     },
 }
 
@@ -907,6 +922,10 @@ pub(crate) struct ClientShellState {
     pub(super) copy_operation_in_flight: bool,
     pub(super) copy_operation_queue: VecDeque<ClientCopyOperation>,
     pub(super) copy_input_queue: VecDeque<crate::input::TerminalKey>,
+    /// A search-prompt keystroke landed since the last client tick.
+    pub(super) copy_search_preview_typed: bool,
+    /// The prompt went a full tick without keystrokes; search on the next one.
+    pub(super) copy_search_preview_ready: bool,
     pub(super) next_scroll_serial: u64,
     pub(super) pane_scroll_in_flight: HashMap<String, u64>,
     pub(super) pane_scroll_queued: HashMap<String, usize>,
@@ -1069,6 +1088,8 @@ impl ClientShellState {
             copy_mode: None,
             copy_session_generation: 0,
             copy_operation_in_flight: false,
+            copy_search_preview_typed: false,
+            copy_search_preview_ready: false,
             copy_operation_queue: VecDeque::new(),
             copy_input_queue: VecDeque::new(),
             next_scroll_serial: 0,

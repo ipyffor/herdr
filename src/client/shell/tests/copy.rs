@@ -31,6 +31,7 @@ fn pasted_help_and_copy_queries_normalize_single_line_text() {
         search_prompt: Some(ClientCopySearchPrompt {
             direction: crate::api::schema::PaneCopySearchDirection::Forward,
             query: TextEditor::default(),
+            restore: ClientCopySearchHighlights::default(),
         }),
         search_query: String::new(),
         search_direction: None,
@@ -698,6 +699,79 @@ fn keyboard_copy_mode_content_motion_is_endpoint_backed_and_stale_safe() {
     assert_eq!(
         state.copy_mode.as_ref().map(|mode| mode.cursor.col),
         Some(3)
+    );
+}
+
+#[test]
+fn copy_search_previews_matches_while_the_query_is_typed() {
+    let mut state = ClientShellState::new(ClientShellConfig::from_config(&Config::default()));
+    state.set_snapshot(Box::new(snapshot()));
+    let mut pane_surface = surface();
+    pane_surface.panes[0].scroll = Some(crate::protocol::PaneSurfaceScrollMetrics {
+        offset_from_bottom: 0,
+        max_offset_from_bottom: 20,
+        viewport_rows: 2,
+    });
+    state.set_pane_surface(pane_surface);
+    state.compose(106, 20).expect("composed frame");
+    let mut enter = ClientShellInput::default();
+    state.record_binding(
+        crate::input::KeybindMatch::Action(crate::input::KeybindAction::CopyMode),
+        &mut enter,
+    );
+    let origin = state.copy_mode.as_ref().expect("copy mode").cursor;
+
+    // Typing itself must not reach the endpoint.
+    state.handle_input_bytes(b"/needle");
+    assert!(state.copy_search_prompt_open());
+    let mut outcome = ClientShellInput::default();
+    state.tick_copy_search_preview(&mut outcome);
+    assert!(outcome.actions.is_empty(), "keystrokes must not search");
+
+    // One quiet tick later the preview search goes out.
+    let mut outcome = ClientShellInput::default();
+    state.tick_copy_search_preview(&mut outcome);
+    let [ClientShellAction::Endpoint { request, .. }] = &outcome.actions[..] else {
+        panic!("expected a preview search once typing settled");
+    };
+    let request_id = request.id.clone();
+    assert!(matches!(
+        &request.method,
+        crate::api::schema::Method::PaneCopySearch(params)
+            if params.query == "needle"
+                && params.cursor == origin
+                && params.previous.is_none()
+    ));
+
+    let found = crate::api::schema::PaneTextRange {
+        start: crate::api::schema::PaneTextPoint { row: 3, col: 1 },
+        end: crate::api::schema::PaneTextPoint { row: 3, col: 7 },
+    };
+    state.handle_endpoint_result(
+        "boot-1",
+        &request_id,
+        Ok(copy_search_result(vec![found], Some(0))),
+    );
+
+    let copy_mode = state.copy_mode.as_ref().expect("copy mode");
+    assert_eq!(copy_mode.search_matches, vec![found]);
+    assert_eq!(copy_mode.search_total, 1);
+    assert_eq!(
+        copy_mode.cursor, origin,
+        "a preview must not move the cursor"
+    );
+    assert!(
+        copy_mode.search_query.is_empty(),
+        "a preview must not commit the query for n/N"
+    );
+
+    // Cancelling the prompt puts the pre-prompt highlights back.
+    state.handle_input_bytes(b"\x1b");
+    let copy_mode = state.copy_mode.as_ref().expect("copy mode");
+    assert!(copy_mode.search_prompt.is_none());
+    assert!(
+        copy_mode.search_matches.is_empty(),
+        "Esc restores the highlights that predate the prompt"
     );
 }
 

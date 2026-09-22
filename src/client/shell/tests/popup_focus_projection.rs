@@ -115,6 +115,7 @@ fn modal_paste_target_requires_a_focused_editable_client_field() {
         search_prompt: Some(ClientCopySearchPrompt {
             direction: crate::api::schema::PaneCopySearchDirection::Forward,
             query: TextEditor::default(),
+            restore: ClientCopySearchHighlights::default(),
         }),
         search_query: String::new(),
         search_direction: None,
